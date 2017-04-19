@@ -14,21 +14,6 @@ services:
             - ./db-data:/var/lib/mysql
         ports:
           - 3306:3306
-#    keystone:
-#        build: keystone
-#        hostname: keystone
-#        volumes:
-#            - ./etc-keystone:/etc/keystone
-#            - ./init-scripts:/init-scripts
-#        ports:
-#            - 35357:35357
-#            - 5000:5000
-#        links:
-#          - mariadb
-#          - rabbitmq
-#        depends_on:
-#          - mariadb
-#        command: sh /init-scripts/initialize_keystone.sh
 
     cinderclient:
         build: cinderclient
@@ -42,7 +27,7 @@ services:
             - OS_VOLUME_API_VERSION=3.27
 
     cinder-api:
-        build: cinder-api
+        image: loci_cinder_deb
         hostname: cinder-api
         volumes:
             - ./db-data:/var/lib/mysql
@@ -57,7 +42,7 @@ services:
           - mariadb
         command: sh /init-scripts/cinder.sh
     cinder-scheduler:
-        build: cinder-scheduler
+        image: loci_cinder_deb
         hostname: cinder-scheduler
         volumes:
             - ./db-data:/var/lib/mysql
@@ -65,9 +50,10 @@ services:
         links:
           - mariadb
           - rabbitmq
+        command: cinder-scheduler
 
     cinder-volume:
-        build: cinder-volume
+        image: loci_cinder_deb
         hostname: cinder-volume
         volumes:
             - ./db-data:/var/lib/mysql
@@ -75,3 +61,4 @@ services:
         links:
           - mariadb
           - rabbitmq
+        command: cinder-volume
