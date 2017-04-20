@@ -17,12 +17,11 @@ We're currently using Cinder's noauth option but will be adding the
 option to deploy a configured Keystone container as well.
 
 ## To build
-First, make sure you have a loci base cinder image.  If you haven't
-build one yet, you can run:
-
+First, make sure you have a loci base cinder image.  This repo includes
+a simple bash script to pull and/or build the latest images needed
+by the docker-compose file as well as tagging them as needed.
 ```shell
-docker build https://git.openstack.org/openstack/loci-cinder.git\#:debian \
-  --tag loci_cinder_deb
+./bootstrap-images.sh
 ```
 
 For more informaiton and options, check out the openstack/loci page on github:

@@ -16,7 +16,7 @@ services:
           - 3306:3306
 
     cinderclient:
-        build: cinderclient
+        image: cinderclient:debian
         hostname: cinderclient
         links:
             - cinder-api
@@ -27,7 +27,7 @@ services:
             - OS_VOLUME_API_VERSION=3.27
 
     cinder-api:
-        image: loci_cinder_deb
+        image: loci_cinder:deb
         hostname: cinder-api
         volumes:
             - ./db-data:/var/lib/mysql
@@ -42,7 +42,7 @@ services:
           - mariadb
         command: sh /init-scripts/cinder.sh
     cinder-scheduler:
-        image: loci_cinder_deb
+        image: loci_cinder:deb
         hostname: cinder-scheduler
         volumes:
             - ./db-data:/var/lib/mysql
@@ -50,15 +50,21 @@ services:
         links:
           - mariadb
           - rabbitmq
+        depends_on:
+          - mariadb
+          - rabbitmq
         command: cinder-scheduler
 
     cinder-volume:
-        image: loci_cinder_deb
+        image: loci_cinder:deb
         hostname: cinder-volume
         volumes:
             - ./db-data:/var/lib/mysql
             - ./etc-cinder:/etc/cinder
         links:
+          - mariadb
+          - rabbitmq
+        depends_on:
           - mariadb
           - rabbitmq
         command: cinder-volume
