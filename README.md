@@ -23,7 +23,24 @@ by the docker-compose file as well as tagging them as needed.
 ```shell
 ./bootstrap-images.sh
 ```
+This will result in some base images that we'lluse:
+  cinderclient
+  openstackclient (osc)
+  cinder:deb (openstack/loci image)
+  keystone:deb (openstack/loci image)
 
+The client images (cinderclient and osc) are set with their client executable
+as their entryppoints.  To use, you need to provide the needed env variables
+and the command you wish to issue.  For example to perform a `list` command
+using the cinderclient container:
+
+```shell
+docker run -it -e OS_AUTH_TYPE=noauth \
+  -e CINDERCLIENT_BYPASS_URL=http://cinder-api:8776/v3 \
+  -e OS_PROJECT_ID=foo \
+  -e OS_VOLUME_API_VERSION=3.27 \
+  cinderclient list
+```
 For more informaiton and options, check out the openstack/loci page on github:
 https://github.com/openstack/loci
 
@@ -38,6 +55,7 @@ device (no worries, there are over 80 to choose from).
 
 ## cinderclient
 The compose will also build a hacky cinderclient, so you can just do:
+
 ```shell
 cinderclient cinder create --name foo 1
 ```
