@@ -17,17 +17,24 @@ We're currently using Cinder's noauth option but will be adding the
 option to deploy a configured Keystone container as well.
 
 ## To build
-First, make sure you have a loci base cinder image.  This repo includes
-a simple bash script to pull and/or build the latest images needed
-by the docker-compose file as well as tagging them as needed.
-```shell
-./bootstrap-images.sh
-```
+Start by building the required images.  This repo includes a Makefile to
+enable building of openstack/loci images of Cinder and Keystone.  The
+Makefile includes variables to select between platform (debian, ubuntu or
+centos) and also allows what branch of each project to biuld the image from.
+This includes master, stable/xyz as well as patch versions.  Additional
+variables are provided and can be passed to make using the `-e` option to
+control things like naming and image tags.  See the Makefile for more info.
+
+Simply running `make` with no arguments will result in Cinder and Keystone
+images being built from the current master branch of the projects git repo.
+The default is to use source, with no naming prefixes and to tag the images
+as `latest` using Debian Jessie as the platform.
+
 This will result in some base images that we'lluse:
   cinderclient
   openstackclient (osc)
-  cinder:deb (openstack/loci image)
-  keystone:deb (openstack/loci image)
+  cinder (openstack/loci image)
+  keystone (openstack/loci image)
 
 The client images (cinderclient and osc) are set with their client executable
 as their entryppoints.  To use, you need to provide the needed env variables
