@@ -6,19 +6,19 @@ services:
           - "5672:5672"
         hostname: rabbitmq
     mariadb:
-        build: mariadb
+        image: mariadb
         hostname: mariadb
         environment:
           - MYSQL_ROOT_PASSWORD=password
         volumes:
             - ./db-data:/var/lib/mysql
+            - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
         ports:
           - 3306:3306
     cinder-api:
-        image: loci_cinder:deb
+        image: cinder_debian
         hostname: cinder-api
         volumes:
-            - ./db-data:/var/lib/mysql
             - ./etc-cinder:/etc/cinder
             - ./init-scripts:/init-scripts
         ports:
@@ -28,12 +28,11 @@ services:
           - rabbitmq
         depends_on:
           - mariadb
-        command: sh /init-scripts/cinder.sh
+        command: sh /init-scripts/cinder-api.sh
     cinder-scheduler:
-        image: loci_cinder:deb
+        image: cinder_debian
         hostname: cinder-scheduler
         volumes:
-            - ./db-data:/var/lib/mysql
             - ./etc-cinder:/etc/cinder
         links:
           - mariadb
@@ -44,10 +43,9 @@ services:
         command: cinder-scheduler
 
     cinder-volume:
-        image: loci_cinder:deb
+        image: cinder_debian
         hostname: cinder-volume
         volumes:
-            - ./db-data:/var/lib/mysql
             - ./etc-cinder:/etc/cinder
         links:
           - mariadb
