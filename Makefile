@@ -7,7 +7,6 @@ build: $(objects)
 
 	docker build https://git.openstack.org/openstack/loci-cinder.git\#:$(PLATFORM) --tag cinder:$(TAG) --build-arg PROJECT_REF="stable/ocata"
 	docker build -t cinder-volume ./cinder-volume
-	docker build -t cinderclient ./cinderclient
 	docker build -t osc ./osc
 
 default: build
