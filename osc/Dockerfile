@@ -6,4 +6,4 @@ RUN apt-get update \
 RUN pip install pip
 RUN pip install setuptools pytz
 RUN pip install python-openstackclient
-ENTRYPOINT ["openstack"]
+CMD openstack

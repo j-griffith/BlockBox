@@ -1,0 +1,24 @@
+#!/bin/bash
+
+usage() {
+    err "Invalid usage. Usage: "
+    err "\t$0 init"
+    err "\t$0 attach <json params> <nodename>"
+    err "\t$0 detach <mount device> <nodename>"
+    err "\t$0 waitforattach <mount device> <json params>"
+    err "\t$0 mountdevice <mount dir> <mount device> <json params>"
+    err "\t$0 unmountdevice <mount dir>"
+    err "\t$0 getvolumename <json params>"
+    err "\t$0 isattached <json params> <nodename>"
+    exit 1
+}
+
+err() {
+    echo -ne $* 1>&2
+}
+
+log() {
+    echo -ne $* >&1
+}
+
+ismounted() {

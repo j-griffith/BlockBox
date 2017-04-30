@@ -16,7 +16,7 @@ services:
         ports:
           - 3306:3306
     cinder-api:
-        image: cinder_debian
+        image: cinder
         hostname: cinder-api
         volumes:
             - ./etc-cinder:/etc/cinder
@@ -30,7 +30,7 @@ services:
           - mariadb
         command: sh /init-scripts/cinder-api.sh
     cinder-scheduler:
-        image: cinder_debian
+        image: cinder
         hostname: cinder-scheduler
         volumes:
             - ./etc-cinder:/etc/cinder
@@ -40,17 +40,44 @@ services:
         depends_on:
           - mariadb
           - rabbitmq
+          - cinder-api
         command: cinder-scheduler
 
+        #    cinder-volume:
+        #image: cinder_debian
+        #hostname: cinder-volume
+        #privileged: true
+        #volumes:
+        #    - ./etc-cinder:/etc/cinder
+        #    - /dev/:/dev/
+        #    - /run/:/run/:shared
+        #    - /etc/localtime:/etc/localtime:ro
+        #links:
+        #  - mariadb
+        #  - rabbitmq
+        #depends_on:
+        #  - mariadb
+        #  - rabbitmq
+        #ports:
+        #    - 3260:3260
+        #command: cinder-volume
     cinder-volume:
-        image: cinder_debian
-        hostname: cinder-volume
+        image: cinder-volume
+        hostname: cinder-volume-lvm
+        privileged: true
         volumes:
             - ./etc-cinder:/etc/cinder
+            - /dev/:/dev/
+            - /run/:/run/:shared
+            - /etc/localtime:/etc/localtime:ro
+            - /lib/modules:/lib/modules:ro
         links:
           - mariadb
           - rabbitmq
         depends_on:
           - mariadb
           - rabbitmq
-        command: cinder-volume
+          - cinder-api
+        ports:
+            - 3260:3260
+        command: bash -c "sleep 10 && /usr/sbin/tgtd && cinder-volume"

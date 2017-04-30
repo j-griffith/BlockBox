@@ -51,6 +51,22 @@ docker run -it -e OS_AUTH_TYPE=noauth \
 For more informaiton and options, check out the openstack/loci page on github:
 https://github.com/openstack/loci
 
+To use this in a local context (ie local-attach), you'll need to install
+cinderlcient and the cinder-brick extension for cinderclient on your
+systems.  The current release version in pypi doesn't include noauth
+support, so you'll need to install from source, but that's not hard:
+
+```shell
+sudo pip install pytz
+sudo pip install git+https://github.com/openstack/python-cinderclient
+sudo pip install git+https://github.com/openstack/python-brick-cinderclient-ext
+```
+
+Now, you can source the included cinder.rc file to use the client to
+communicate with your containerized cinder deployment, with noauth!!
+
+Remember, to perform local-attach/local-detach of volumes you'll need to use
+sudo.  To preserve your env variables don't forget to use `sudo -E cinder xxxxx`
 
 ## To run
 docker-compose up -d
