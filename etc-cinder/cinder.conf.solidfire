@@ -9,15 +9,15 @@ state_path = /var/lib/cinder
 lock_path = /var/lock/cinder
 volumes_dir = /var/lib/cinder/volumes
 rabbit_host = rabbitmq
-enabled_backends = lvm
+enabled_backends = solidfire
 
 [database]
 connection = mysql+pymysql://cinder:password@mariadb/cinder?charset=utf8
 
-[lvm]
-lvm_type = thin
-volume_driver = cinder.volume.drivers.lvm.LVMVolumeDriver
-volume_group = cinder-volumes
-iscsi_protocol = iscsi
-iscsi_helper = tgtadm
-volume_backend_name=lvm
+[solidfire]
+volume_driver=cinder.volume.drivers.solidfire.SolidFireDriver
+san_ip=10.117.36.51
+san_login=admin
+san_password=admin
+volume_backend_name=solidfire
+sf_allow_template_caching=false

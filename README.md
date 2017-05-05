@@ -13,47 +13,71 @@ The master branch of BlockBox uses OpenStack Loci to build a base
 Cinder image to use for each service.  We choose debian source builds
 and the result is an extremely compact and efficient image.
 
-We're currently using Cinder's noauth option but will be adding the
-option to deploy a configured Keystone container as well.
+We're currently using Cinder's noauth option, but this pattern provides
+flexibility to add a Keystone service if desired.
 
 ## To build
 Start by building the required images.  This repo includes a Makefile to
-enable building of openstack/loci images of Cinder and Keystone.  The
+enable building of openstack/loci images of Cinder.  The
 Makefile includes variables to select between platform (debian, ubuntu or
 centos) and also allows what branch of each project to biuld the image from.
 This includes master, stable/xyz as well as patch versions.  Additional
 variables are provided and can be passed to make using the `-e` option to
 control things like naming and image tags.  See the Makefile for more info.
 
-Simply running `make` with no arguments will result in Cinder and Keystone
-images being built from the current master branch of the projects git repo.
-The default is to use source, with no naming prefixes and to tag the images
+Simply running `make` with no arguments will kick of a build of Docker images
+that we'll use in a minimal Cinder deployment.
+
+images being built from the current stable branch of the projects git repo.
+The default is currently stable/ocata, with no naming prefixes and to tag the images
 as `latest` using Debian Jessie as the platform.
 
-This will result in some base images that we'lluse:
-  cinderclient
-  openstackclient (osc)
-  cinder (openstack/loci image)
-  keystone (openstack/loci image)
-
-The client images (cinderclient and osc) are set with their client executable
-as their entryppoints.  To use, you need to provide the needed env variables
-and the command you wish to issue.  For example to perform a `list` command
-using the cinderclient container:
-
-```shell
-docker run -it -e OS_AUTH_TYPE=noauth \
-  -e CINDERCLIENT_BYPASS_URL=http://cinder-api:8776/v3 \
-  -e OS_PROJECT_ID=foo \
-  -e OS_VOLUME_API_VERSION=3.27 \
-  cinderclient list
-```
-For more informaiton and options, check out the openstack/loci page on github:
+For more information and options, check out the openstack/loci page on github:
 https://github.com/openstack/loci
 
-To use this in a local context (ie local-attach), you'll need to install
-cinderlcient and the cinder-brick extension for cinderclient on your
-systems.  The current release version in pypi doesn't include noauth
+This will result in some base images that we'lluse:
+  cinder (openstack/loci image)
+  cinder-volume (special cinder image with LVM config)
+  cinder-devenv (provides a Cinder development env container)
+
+### cinder
+Creates a base image with cinder installed via source.  This base image is
+enough to run all of the services including api, scheudler and Volume with
+the exception of cinder-volume with the LVM driver which needs some extra
+packages installed like LVM2 and iSCSI target driver.
+
+Each Cinder service has an executable entrypoint at /usr/local/bin.
+
+### cinder-volume
+This is a special image that is built from the base cinder image and adds the
+necessary packages for LVM and iSCSI.
+
+NOTE
+If you shoose to build images from something other than the default Debian
+base, you'll need to modify the Dockerfile for this image as well.
+
+### cinder-devenv
+You might want to generate a conf file, or if you're like me, use Docker to do
+some of your Cinder development.  You can run this container which has all of
+the current development packages and python test-requirements for Cinder.
+
+You can pass in your current source directory from your local machine using -v
+in your run command, here's a trival example that generates a sample config
+file.  Note we don't use tox because we're already in an isolated environment.
+
+```shell
+docker run -it -v /home/jgriffith/src/cinder:/cinder  \
+  cinder-devenv \
+  bash -c "cd cinder && oslo-config-generator \
+  --config-file=cinder/config/cinder-config-generator.conf"
+```
+
+## Accessing via cinderclient
+You can of course build a cinderclient container with a `cinder` entrypoint and
+use that for acces, but in order to take advantage of things like the
+local-attach extension, you'll need to install the client tools on the host.
+
+The current release version in pypi doesn't include noauth
 support, so you'll need to install from source, but that's not hard:
 
 ```shell
@@ -76,15 +100,27 @@ specific driver.  We'll be adding support for the LVM driver and LIO Tgts
 shortly, but for now you won't have much luck without using an external
 device (no worries, there are over 80 to choose from).
 
-## cinderclient
-The compose will also build a hacky cinderclient, so you can just do:
+## Adding your own driver
+We don't do multi-backend in this type of environment; instead we just add
+another container running the backend we want.  We can easily add to the base
+service we've create using additional compose files.
 
+The file `docker-compose-add-vol-service.yml` provides an example additional
+compose file that will create another cinder-volume service configured to run
+the SolidFire backend.
+
+After launching the main compose file:
 ```shell
-cinderclient cinder create --name foo 1
+docker-compose up -d
 ```
 
-This is pretty messy right now but it's another thing on the list to be
-improved upon soon.
+Once the services are initialized and the database is synchronized, you can add
+another backend by running:
+```shell
+docker-compose -f ./docker-compose-add-vol-service.yml up -d
+```
+
+Note that things like network settings and ports are IMPORTANT here!!
 
 ## Access using the cinderclient container
 
@@ -149,14 +185,3 @@ docker run -d --name cinder-volume \
   -v ~/BlockBox/etc-cinder:/etc/cinder \
   cinder-debian cinder-volume
 ```
-## TODO
-Some people like Keystone, we have a working version here that's
-custom to Cinder.  Still needs a few things like adding endpoints etc
-but should be pretty straightforward to setup.
-
-*NOTE*
-We're departing from our norm here of using src packages and just using
-Ubuntu 17.04 with packages for now.  Keystone is a bit more involved to
-setup, particularly from source so we're starting with the path of least
-resistance.  Maybe you'd like to work on this and submit the first PR for
-the project :)
