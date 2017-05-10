@@ -1,164 +1,208 @@
-#!/usr/bin/python
+#!/bin/bash
 
-import json
-from subprocess import check_call, check_output
-import sys
+# Copyright 2015 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
+# Based on this excellent blog post by Ivan - http://blog.e0ne.info/post/Attach-Cinder-Volume-to-the-Ironic-Instance-without-Nova.aspx
 
-import brick_cinderclient_ext
-from cinderclient import client
-from cinderclient.contrib import noauth
-from keystoneauth1 import loading
-from keystoneauth1 import session
+export OS_PROJECT_DOMAIN_ID=default
+export OS_USER_DOMAIN_ID=default
+export OS_PROJECT_NAME=admin
+export OS_PASSWORD=secret
+export OS_AUTH_URL=http://10.0.0.2/identity
+export OS_USERNAME=admin
+export PATH=$PATH:/lib/udev
 
+# Notes:
+#  - Please install "jq" package before using this driver.
+usage() {
+    err "Invalid usage. Usage: "
+    err "\t$0 init"
+    err "\t$0 attach <json params> <nodename>"
+    err "\t$0 detach <mount device> <nodename>"
+    err "\t$0 waitforattach <mount device> <json params>"
+    err "\t$0 mountdevice <mount dir> <mount device> <json params>"
+    err "\t$0 unmountdevice <mount dir>"
+    err "\t$0 getvolumename <json params>"
+    err "\t$0 isattached <json params> <nodename>"
+    exit 1
+}
 
-def _init_client():
-    bypass_url = "http://127.0.0.1:8776/v3"
-    project_id = "cinderflex"
-    auth_plugin = noauth.CinderNoAuthPlugin('kubernetes',
-                                            project_id,
-                                            None,
-                                            bypass_url)
+err() {
+    echo -ne $* 1>&2
+}
 
-    loader = loading.get_plugin_loader('noauth')
-    auth = loader.load_from_options(endpoint=bypass_url,
-                                    user_id="kubernetes",
-                                    project_id=project_id)
-    sess = session.Session(auth=auth)
+log() {
+    echo -ne $* >&1
+}
 
-    return client.Client(
-        3, 'password', 'kubernetes', bypass_url,
-        tenant_id='cinderflex',
-        bypass_url=bypass_url,
-        auth_plugin=auth_plugin,
-        session=sess, extensions=[brick_cinderclient_ext])
+ismounted() {
+    MOUNT=`findmnt -n ${MNTPATH} 2>/dev/null | cut -d' ' -f1`
+    if [ "${MOUNT}" == "${MNTPATH}" ]; then
+        echo "1"
+    else
+        echo "0"
+    fi
+}
 
+getdevice() {
+    VOLUMEID=$(echo ${JSON_PARAMS} | jq -r '.volumeID')
+    DMDEV="/dev/disk/by-path/$(ls -1 /dev/disk/by-path/ | grep $VOLUMEID)"
+    echo ${DMDEV}
+}
 
-def _find_id_by_device(device):
-    c = _init_client()
-    vols = c.volumes.list()
-    attached_vols = [v for v in vols if v.status == 'in-use']
-    for av in attached_vols:
-        if device in av.metadata.get('device', ''):
-            return av.id
+attach() {
+    JSON_PARAMS=$1
+    SIZE=$(echo $1 | jq -r '.size')
 
+    VOLUMEID=$(echo ${JSON_PARAMS} | jq -r '.volumeID')
+    sudo -E PATH=$PATH cinder local-attach $VOLUMEID >> /tmp/cinder2.log 2>&1
 
-def _attach(json_params, nodename):
-    c = _init_client()
-    params = json.loads(json_params)
-    volid = params.get('volumeID', None)
-    if not volid:
-        sys.stderr.write('{"status": "Failure", "message": "Missing volumeID"}')
-        sys.exit(1)
+    DMDEV=$(getdevice)
+    if [ ! -b "${DMDEV}" ]; then
+        err "{\"status\": \"Failure\", \"message\": \"Volume ${VOLUMEID} does not exist\"}"
+        exit 1
+    fi
+    log "{\"status\": \"Success\", \"device\":\"${DMDEV}\"}"
+    exit 0
+}
 
-    status = c.volumes.get(volid).status
-    if 'available' not in status:
-        sys.stderr.write(
-            '{"status": "Failure", "message": "invalid volume status for attach"}')
-        sys.exit(1)
+detach() {
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
 
-    attach_info = c.brick_local_volume_management.attach(volid, nodename)
-    device_meta = {"device": attach_info['path']}
-    c.volumes.set_metadata(volid, device_meta)
-    print(json.dumps({'status': 'Success', 'device': attach_info['path']}))
-    sys.exit(0)
+waitforattach() {
+    #shift
+    #attach $*
+    log "{\"status\": \"Success\"}"
+    exit 0
 
+}
 
-def _detach(mount_device, nodename):
-    volid = _find_id_by_device(mount_device)
-    c = _init_client()
-    c.brick_local_volume_management.detach(volid)
-    print(json.dumps({'status': 'Success'}))
-    sys.exit(0)
+domountdevice() {
+    MNTPATH=$1
+    JSON_PARAMS=$2
+    DMDEV=$(getdevice)
+    FSTYPE=$(echo $JSON_PARAMS|jq -r '.["kubernetes.io/fsType"]')
 
+    if [ ! -b "${DMDEV}" ]; then
+        err "{\"status\": \"Failure\", \"message\": \"${DMDEV} does not exist\"}"
+        exit 1
+    fi
 
-def _mountdevice(mount_dir, device, json_params):
-    existing_fs = None
-    params = json.loads(json_params)
-    fs_type = params.get('["kubernetes.io/fsType"]', 'ext4')
-    cmd = ["blkid", "-o", "udev", device]
-    try:
-        out = check_output(cmd)
-    except Exception:
-        sys.exit(1)
+    if [ $(ismounted) -eq 1 ] ; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
 
-    for l in out.split("\n"):
-        if 'ID_FS_TYPE' in l:
-            existing_fs = l.split('=')[1]
-            break
+    VOLFSTYPE=`blkid -o udev ${DMDEV} 2>/dev/null|grep "ID_FS_TYPE"|cut -d"=" -f2`
+    if [ "${VOLFSTYPE}" == "" ]; then
+        mkfs -t ${FSTYPE} ${DMDEV} >/dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            err "{ \"status\": \"Failure\", \"message\": \"Failed to create fs ${FSTYPE} on device ${DMDEV}\"}"
+            exit 1
+        fi
+    fi
 
-    if not existing_fs:
-        if fs_type in ['ext4', 'xfs']:
-            cmd = ["mkfs", "-t", fs_type]
-            try:
-                check_call(cmd)
-            except Exception:
-                sys.exit(1)
-        else:
-            sys.exit(1)
+    mkdir -p ${MNTPATH} &> /dev/null
 
-    cmd = ["mdkir", "-p", mount_dir]
-    try:
-        check_call(cmd)
-    except Exception:
-        sys.exit(1)
+    mount ${DMDEV} ${MNTPATH} &> /dev/null
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failure\", \"message\": \"Failed to mount device ${DMDEV} at ${MNTPATH}\"}"
+        exit 1
+    fi
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
 
-    cmd = ["mount", device, mount_dir]
-    try:
-        check_call(cmd)
-    except Exception:
-        sys.exit(1)
+unmountdevice() {
+    MNTPATH=$1
+    if [ ! -d ${MNTPATH} ]; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
 
-    print(json.dumps({'status': 'Success'}))
-    sys.exit(0)
+    if [ $(ismounted) -eq 0 ] ; then
+        log "{\"status\": \"Success\"}"
+        exit 0
+    fi
 
+    umount ${MNTPATH} &> /dev/null
+    if [ $? -ne 0 ]; then
+        err "{ \"status\": \"Failed\", \"message\": \"Failed to unmount volume at ${MNTPATH}\"}"
+        exit 1
+    fi
 
-def _unmountdevice(mount_path):
-    cmd = ["umount", mount_path]
-    try:
-        check_call(cmd)
-    except Exception:
-        sys.exit(1)
-    print(json.dumps({'status': 'Success'}))
-    sys.exit(0)
+    $VOLUMEID=$(echo ${MNTPATH} | sed -r "s/^.*volume-(.*)-lun.*/\1/")
+    sudo -E PATH=$PATH cinder local-detach $VOLUMEID >> /tmp/cinder2.log 2>&1
 
+    log "{\"status\": \"Success\"}"
+    exit 0
+}
 
-def _isattached(json_params, nodename):
-    params = json.loads(json_params)
-    volid = params.get('volumeID', None)
-    if not volid:
-        sys.stderr.write('{"status": "Failure", "message": "Missing volumeID"}')
-        sys.exit(1)
+getvolumename() {
+    JSON_PARAMS=$1
+    UUID=$(echo ${JSON_PARAMS} | jq -r '.volumeID')
 
-    if 'in-use' in c.volumes.get(volid).status:
-        print(json.dumps({'status': 'Success', 'attached': 'true'}))
-    else:
-        print(json.dumps({'status': 'Success', 'attached': 'false'}))
+    log "{\"status\": \"Success\", \"volumeName\":\"${UUID}\"}"
+    exit 0
+}
 
+isattached() {
+    log "{\"status\": \"Success\", \"attached\":true}"
+    exit 0
+}
 
-def usage(prog):
-    sys.stderr.write("Invalid usage.  Usage: ")
-    sys.stderr.write("\t%s init", prog)
-    sys.stderr.write("\t%s attach <json-params> <nodename", prog)
-    sys.stderr.write("\t%s detach <mount-device> <nodename>", prog)
-    sys.stderr.write("\t%s mountdevice <mount-dir> <mount-device> "
-                     "<json-params>", prog)
-    sys.stderr.write("\t%s unmountdevice <mount-device>", prog)
-    sys.stderr.write("\t%s isattached <json-params> <nodename>", prog)
-    sys.exit(1)
+op=$1
 
-if __name__ == "__main__":
-    if sys.argv[1] == "init":
-        pass
-    elif sys.argv[1] == "attach":
-        _attach(sys.argv[2], sys.argv[3])
-    elif sys.argv[1] == "detach":
-        _detach(sys.argv[2], sys.argv[3])
-    elif sys.argv[1] == "mountdevice":
-        _mountdevice(sys.argv[2], sys.argv[3], sys.argv[4])
-    elif sys.argv[1] == "unmountdevice":
-        _unmountdevice(sys.argv[2])
-    elif sys.argv[1] == "isattached":
-        _isattached(sys.argv[2], sys.argv[3])
-    else:
-        usage()
+if [ "$op" = "init" ]; then
+    log "{\"status\": \"Success\"}"
+    exit 0
+fi
+
+if [ $# -lt 2 ]; then
+    usage
+fi
+
+shift
+
+case "$op" in
+    attach)
+        attach $*
+        ;;
+    detach)
+        detach $*
+        ;;
+    waitforattach)
+        waitforattach $*
+        ;;
+    mountdevice)
+        domountdevice $*
+        ;;
+    unmountdevice)
+        unmountdevice $*
+        ;;
+    getvolumename)
+        getvolumename $*
+        ;;
+    isattached)
+        isattached $*
+        ;;
+    *)
+        err "{ \"status\": \"Not supported\" }"
+        exit 1
+esac
+
+exit 1

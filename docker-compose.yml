@@ -35,6 +35,8 @@ services:
         extra_hosts:
             - "rabbitmq:172.49.49.5"
             - "mariadb:172.49.49.6"
+        environment:
+            - INIT_DB=false
         command: sh /init-scripts/cinder-api.sh
     cinder-scheduler:
         image: cinder
@@ -51,6 +53,7 @@ services:
         network_mode: "host"
         depends_on:
           - cinder-api
+        restart: on-failure
         command: cinder-scheduler
     cinder-volume:
         image: cinder-volume
@@ -71,7 +74,7 @@ services:
             - "mariadb:172.49.49.6"
         network_mode: "host"
         restart: on-failure
-        command: bash -c "sleep 30 && /usr/sbin/tgtd && cinder-volume -d"
+        command: bash -c "sleep 5 && /usr/sbin/tgtd && cinder-volume -d"
 
 networks:
     cindernet:
