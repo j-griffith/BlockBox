@@ -36,7 +36,7 @@ services:
             - "rabbitmq:172.49.49.5"
             - "mariadb:172.49.49.6"
         environment:
-            - INIT_DB=false
+            - INIT_DB=true
         command: sh /init-scripts/cinder-api.sh
     cinder-scheduler:
         image: cinder
